@@ -17,7 +17,7 @@ from devinterp.optim.sgld import SGLD
 def sample_single_chain(
     ref_model: nn.Module,
     loader: DataLoader,
-    criterion: Callable,
+    criterion: Union[Callable, type],
     num_draws=100,
     num_burnin_steps=0,
     num_steps_bw_draws=1,
@@ -39,18 +39,25 @@ def sample_single_chain(
     if seed is not None:
         torch.manual_seed(seed)
 
+    if isinstance(criterion, type):
+        criterion = criterion()  # if criterion is a class, instantiate it
+
     num_steps = num_draws * num_steps_bw_draws + num_burnin_steps
 
     local_draws = pd.DataFrame(
         index=range(num_draws),
-        columns=["chain", "step", "loss"] + (["model_weights"] if return_weights else []),
+        columns=["chain", "step", "loss"]
+        + (["model_weights"] if return_weights else []),
     )
 
     iterator = zip(range(num_steps), itertools.cycle(loader))
 
     if pbar:
         iterator = tqdm(
-            iterator, desc=f"Chain {chain}", total=num_steps, disable=not verbose  # TODO: Redundant
+            iterator,
+            desc=f"Chain {chain}",
+            total=num_steps,
+            disable=not verbose,  # TODO: Redundant
         )
 
     model.train()
@@ -84,7 +91,7 @@ def _sample_single_chain(kwargs):
 def sample(
     model: torch.nn.Module,
     loader: DataLoader,
-    criterion: Callable,
+    criterion: Union[Callable, type],
     sampling_method: Type[torch.optim.Optimizer] = SGLD,
     optimizer_kwargs: Optional[Dict[str, Union[float, Literal["adaptive"]]]] = None,
     num_draws: int = 100,
@@ -151,7 +158,9 @@ def sample(
     if cores > 1:
         ctx = get_context("spawn")
         with ctx.Pool(cores) as pool:
-            results = pool.map(_sample_single_chain, [get_args(i) for i in range(num_chains)])
+            results = pool.map(
+                _sample_single_chain, [get_args(i) for i in range(num_chains)]
+            )
     else:
         for i in range(num_chains):
             results.append(_sample_single_chain(get_args(i)))
