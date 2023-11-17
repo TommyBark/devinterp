@@ -19,6 +19,7 @@ def estimate_learning_coeff(
     num_chains: int = 10,
     num_burnin_steps: int = 0,
     num_steps_bw_draws: int = 1,
+    clip_chains_quantile: float|None = None,
     cores: int = 1,
     seed: Optional[Union[int, List[int]]] = None,
     pbar: bool = True,
@@ -42,11 +43,23 @@ def estimate_learning_coeff(
         verbose=verbose,
     )
     baseline_loss = trace.loc[trace["chain"] == 0, "loss"].iloc[0]
+    if clip_chains_quantile is not None:
+        trace = chain_clipper(trace, clip_chains_quantile)
     avg_loss = trace.groupby("chain")["loss"].mean().mean()
     num_samples = len(loader.dataset)
 
     return (avg_loss - baseline_loss) * num_samples / np.log(num_samples)
 
+def chain_clipper(trace: pd.DataFrame, q:float=0.95) -> pd.DataFrame:
+
+    def group_clip(group, q=0.9):
+        q_value = group["loss"].quantile(q)
+        #group.loc[:, "loss_capped"] = group["loss"].copy()
+        group.loc[group["loss"] >= q_value, "loss"] = q_value
+        return group
+    
+    return trace.groupby("chain",group_keys=False).apply(group_clip,q=q)
+    
 
 def estimate_learning_coeff_with_summary(
     model: torch.nn.Module,
@@ -58,6 +71,7 @@ def estimate_learning_coeff_with_summary(
     num_chains: int = 10,
     num_burnin_steps: int = 0,
     num_steps_bw_draws: int = 1,
+    clip_chains_quantile: float|None = None,
     cores: int = 1,
     seed: Optional[Union[int, List[int]]] = None,
     pbar: bool = True,
@@ -83,6 +97,9 @@ def estimate_learning_coeff_with_summary(
 
     baseline_loss = trace.loc[trace["chain"] == 0, "loss"].iloc[0]
     num_samples = len(loader.dataset)
+
+    if clip_chains_quantile is not None:
+        trace = chain_clipper(trace, clip_chains_quantile)
     avg_losses = trace.groupby("chain")["loss"].mean()
     results = torch.zeros(num_chains, device=device)
 
