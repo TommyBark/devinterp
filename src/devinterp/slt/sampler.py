@@ -14,6 +14,13 @@ from tqdm import tqdm
 from devinterp.optim.sgld import SGLD
 
 
+def is_model_quantized(model) -> bool:
+    for _, param in model.named_parameters():
+        if param.dtype == torch.uint8:
+            return True
+    return False
+
+
 def sample_single_chain(
     ref_model: nn.Module,
     loader: DataLoader,
@@ -31,7 +38,11 @@ def sample_single_chain(
     return_weights=False,
 ):
     # Initialize new model and optimizer for this chain
-    model = deepcopy(ref_model).to(device)
+    if not is_model_quantized(ref_model):
+        model = deepcopy(ref_model).to(device)
+    else:
+        # model = deepcopy(ref_model)
+        model = ref_model
 
     optimizer_kwargs = optimizer_kwargs or {}
     optimizer = sampling_method(model.parameters(), **optimizer_kwargs)
